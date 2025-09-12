@@ -1,7 +1,6 @@
 // Requête Maîtresse : effectue tout le processus de A à Z
 let
-
-    // --- PARAMÈTRES ---
+    // --- PARAMÈTRES RÉELS ---
     Token = Parameter("Token"), // API Key Pennylane
     CompanyId = Parameter("CompanyId"), // Firm ID
     StartDate = Parameter("StartDate"), // Format : "YYYY-MM-DD"
@@ -49,7 +48,6 @@ let
         in
             EnTetesPromus
     else
-        error "L'export n'a pas pu être généré dans le temps imparti (5 minutes). Statut final : " & Text.From(ReponseFinaleJson[status]?),
-
+        error "L'export n'a pas pu être généré dans le temps imparti (5 minutes). Statut final : " & Text.From(ReponseFinaleJson[status]?)
 in
     Resultat
