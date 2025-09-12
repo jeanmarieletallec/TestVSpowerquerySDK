@@ -8,11 +8,11 @@ let
 
     // --- PARTIE 1 : Créer la demande d'export et obtenir l'ID ---
     UrlCreationExport = "https://app.pennylane.com/api/external/v2/exports/analytical_general_ledgers",
-    CorpsCreationExport = "{"
-        & "\"start_date\": \"" & StartDate & "\"," 
-        & "\"end_date\": \"" & EndDate & "\"," 
-        & "\"customer_firm_id\": \"" & CompanyId & "\""
-        & "}",
+    CorpsCreationExport = "{" &
+        "\"start_date\": \"" & StartDate & "\"," &
+        "\"end_date\": \"" & EndDate & "\"," &
+        "\"customer_firm_id\": \"" & CompanyId & "\"" &
+    "}",
     ReponseCreationExport = Json.Document(Web.Contents(UrlCreationExport, [
         Headers = [
             #"Authorization" = "Bearer " & Token,
