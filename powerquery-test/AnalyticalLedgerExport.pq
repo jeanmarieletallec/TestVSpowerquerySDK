@@ -1,64 +1,56 @@
-// Requête Maîtresse : Version finale validée, avec structure hybride (Body + Query)
+// Requête Maîtresse : Version finale avec la fonction DateTimeZone corrigée
 let
-    // --- PARTIE 0 : Utilisation directe des paramètres ---
+    // --- PARTIE 0 : Utilisation directe des paramètres (inchangée) ---
     TokenValue = Token,
     CompanyIdValue = Text.From(CompanyId),
     StartDateValue = StartDate,
     EndDateValue = EndDate,
 
-    // --- PARTIE 1 : Créer la demande d'export et obtenir l'ID ---
+    // --- PARTIE 1 : Créer la demande d'export (inchangée) ---
     UrlCreationExport = "https://app.pennylane.com/api/external/v2/exports/analytical_general_ledgers",
-    
-    // Les dates vont dans le corps (Body/Content)
-    CorpsRecord = [
-        period_start = StartDateValue,
-        period_end = EndDateValue
-    ],
-    // Power Query génère un JSON valide, sans virgule en trop.
+    CorpsRecord = [period_start = StartDateValue, period_end = EndDateValue],
     CorpsEnJson = Json.FromValue(CorpsRecord),
-
-    // L'ID de l'entreprise va dans l'URL (Query)
-    QueryRecord = [
-        customer_firm_id = CompanyIdValue
-    ],
-
-    ReponseCreationExport = Json.Document(Web.Contents(UrlCreationExport, [
-        Headers = [
-            #"Authorization" = "Bearer " & TokenValue,
-            #"Content-Type" = "application/json"
-        ],
-        // Paramètres pour l'URL
-        Query = QueryRecord,
-        // Paramètres pour le corps de la requête
-        Content = CorpsEnJson
-    ])),
+    QueryRecord = [customer_firm_id = CompanyIdValue],
+    ReponseCreationExport = Json.Document(Web.Contents(UrlCreationExport, [Headers = [#"Authorization" = "Bearer " & TokenValue, #"Content-Type" = "application/json"], Query = QueryRecord, Content = CorpsEnJson])),
     IdExportationObtenu = Text.From(ReponseCreationExport[id]),
 
-    // --- PARTIE 2 : Boucle d'attente (Polling) pour le fichier ---
-    // Il est probable que la requête de statut nécessite aussi l'ID de l'entreprise.
-    // Ajoutons-le par sécurité.
+    // --- PARTIE 2 : Boucle d'attente AVEC DÉPENDANCE FORCÉE ---
     UrlStatut = "https://app.pennylane.com/api/external/v2/exports/analytical_general_ledgers/" & IdExportationObtenu,
     EnTetesStatut = [ #"Authorization" = "Bearer " & TokenValue ],
-    QueryStatut = [ #"customer_firm_id" = CompanyIdValue ],
+    QueryStatutBase = [ #"customer_firm_id" = CompanyIdValue ],
+    maxTentatives = 120,
+    delai = #duration(0,0,0,10),
 
-    InterrogerApi = (maxTentatives as number, tentativeActuelle as number) as record => (
-        let
-            // On ajoute les paramètres à la requête de statut
-            ReponseActuelle = Json.Document(Web.Contents(UrlStatut, [Headers=EnTetesStatut, Query=QueryStatut])),
-            EstPret = ReponseActuelle[status]? = "ready",
-            EstTimeout = tentativeActuelle >= maxTentatives
-        in
-            if EstPret or EstTimeout then
-                ReponseActuelle
-            else
-                let
-                    _ = Function.InvokeAfter(()=>"attente", #duration(0,0,0,10))
-                in
-                    @InterrogerApi(maxTentatives, tentativeActuelle + 1)
+    ListeDesEtats = List.Generate(
+        // Étape initiale
+        () => [
+            tentative = 0, 
+            reponse = Json.Document(Web.Contents(UrlStatut, [Headers=EnTetesStatut, Query = QueryStatutBase]))
+        ],
+
+        // Condition pour CONTINUER la boucle
+        each [tentative] < maxTentatives and [reponse][status]? <> "ready",
+
+        // Prochaine étape
+        each 
+            let
+                // CORRECTION : Utilisation de DateTimeZone.UtcNow() au lieu de DateTime.UtcNow()
+                valeurPause = Function.InvokeAfter(() => DateTime.ToText(DateTimeZone.UtcNow(), "yyyy-MM-dd-hh-mm-ss-fff"), delai),
+                
+                nouvelleReponse = Json.Document(Web.Contents(UrlStatut, [
+                    Headers=EnTetesStatut, 
+                    Query = QueryStatutBase & [cachebuster = valeurPause]
+                ]))
+            in
+                [tentative = [tentative] + 1, reponse = nouvelleReponse],
+
+        // Ce que l'on garde de chaque étape
+        each [reponse]
     ),
-    ReponseFinaleJson = InterrogerApi(30, 0),
+    
+    ReponseFinaleJson = List.Last(ListeDesEtats),
 
-    // --- PARTIE 3 : Téléchargement et traitement du fichier final ---
+    // --- PARTIE 3 : Téléchargement et traitement du fichier final (inchangée) ---
     Resultat = if ReponseFinaleJson[status]? = "ready" then
         let
             UrlFichierFinal = ReponseFinaleJson[file_url],
@@ -69,7 +61,7 @@ let
         in
             EnTetesPromus
     else
-        error "L'export n'a pas pu être généré dans le temps imparti. Statut final : " & Text.From(ReponseFinaleJson[status]?)
+        error "L'export n'a pas pu être généré dans le temps imparti (20 minutes). Statut final : " & Text.From(ReponseFinaleJson[status]?)
 
 in
     Resultat
